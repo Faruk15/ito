@@ -50,18 +50,17 @@ def seed_initial_data():
                 "Jogadores de futebol",
             ],
             "Animais": [
-                "Animais domésticos",
-                "Animais selvagens",
-                "Animais marinhos",
-                "Aves",
-                "Insetos",
+                "Animais domésticos mais fofos",
+                "Animais selvagens que você conseguiria sair na mão",
+                "Animais marinhos mais perigosos",
+                "Aves mais fodas",
+                "Insetos mais insuportáveis",
             ],
             "Lugares": [
-                "Países",
+                "Países mais ricos",
                 "Cidades brasileiras",
-                "Pontos turísticos",
-                "Praias",
-                "Capitais do mundo",
+                "Pontos turísticos mais visitados",
+                "Capitais do mundo mais sujas",
             ],
             "Profissões": [
                 "Profissões da saúde",
@@ -84,7 +83,7 @@ def seed_initial_data():
                 "Melhores consoles",
                 "Jogos de estratégia",
                 "Jogos de terror que mais dão medo",
-                "Jogos party game",
+                "Jogos party game mais divertidos",
             ],
         }
         

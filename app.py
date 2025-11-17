@@ -4,6 +4,7 @@ from datetime import datetime
 from database import init_database
 from seed_data import seed_initial_data
 import models
+import random
 
 st.set_page_config(
     page_title="Ito",
@@ -11,9 +12,15 @@ st.set_page_config(
     layout="wide"
 )
 
-init_database()
-seed_initial_data()
+# Inicializa banco e seed apenas uma vez
+try:
+    init_database()
+    seed_initial_data()
+except Exception as e:
+    st.error(f"Erro ao inicializar banco: {e}")
+    st.stop()
 
+# Session state
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'room_code' not in st.session_state:
@@ -26,6 +33,8 @@ if 'is_host' not in st.session_state:
     st.session_state.is_host = False
 if 'round_start_time' not in st.session_state:
     st.session_state.round_start_time = None
+if 'shuffled_order' not in st.session_state:
+    st.session_state.shuffled_order = None
 
 def go_to_home():
     st.session_state.page = 'home'
@@ -34,16 +43,17 @@ def go_to_home():
     st.session_state.room_id = None
     st.session_state.is_host = False
     st.session_state.round_start_time = None
+    st.session_state.shuffled_order = None
     st.rerun()
 
 def show_home_page():
-    st.title("Ito")
+    st.title("🎮 Ito")
     st.markdown("---")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Criar Nova Sala")
+        st.subheader("🆕 Criar Nova Sala")
         host_name = st.text_input("Seu nome:", key="host_name_input")
         if st.button("Criar Sala", type="primary", use_container_width=True):
             if host_name.strip():
@@ -58,7 +68,7 @@ def show_home_page():
                 st.error("Por favor, digite seu nome")
     
     with col2:
-        st.subheader("Entrar em uma Sala")
+        st.subheader("🚪 Entrar em uma Sala")
         join_code = st.text_input("Código da sala:", key="join_code_input")
         join_name = st.text_input("Seu nome:", key="join_name_input")
         if st.button("Entrar", type="primary", use_container_width=True):
@@ -86,7 +96,7 @@ def format_duration(seconds):
         return "N/A"
     minutes = seconds // 60
     secs = seconds % 60
-    return f"{minutes}m {secs}s"
+    return f"{int(minutes)}m {int(secs)}s"
 
 def show_history_page():
     st.title("📊 Histórico de Partidas")
@@ -143,7 +153,7 @@ def show_waiting_room(room):
     
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.subheader(f"Host: {room['host_name']}")
+        st.subheader(f"👑 Host: {room['host_name']}")
     with col2:
         if st.button("🚪 Sair da Sala"):
             go_to_home()
@@ -178,8 +188,9 @@ def show_waiting_room(room):
         else:
             st.warning("Nenhuma categoria disponível. Execute seed_data.py primeiro.")
     else:
-        st.info("Aguardando o host iniciar a rodada...")
+        st.info("⏳ Aguardando o host iniciar a rodada...")
     
+    # Auto-refresh apenas na sala de espera
     time.sleep(2)
     st.rerun()
 
@@ -216,7 +227,7 @@ def show_answering_phase(current_round):
     
     if player_answer['confirmed']:
         st.success(f"✅ Sua resposta foi confirmada: **{player_answer['answer']}**")
-        st.info("Aguardando os outros jogadores...")
+        st.info("⏳ Aguardando os outros jogadores...")
     else:
         answer_text = st.text_input(
             "Digite sua resposta:",
@@ -246,8 +257,10 @@ def show_answering_phase(current_round):
     
     if models.check_all_confirmed(current_round['id']):
         models.transition_to_revealing(current_round['id'])
+        st.session_state.shuffled_order = None  # Reset shuffle
         st.rerun()
     
+    # Auto-refresh apenas durante answering
     time.sleep(2)
     st.rerun()
 
@@ -263,15 +276,28 @@ def show_revealing_phase(current_round):
             models.end_round(current_round['id'])
             models.reset_room_for_new_round(st.session_state.room_id)
             st.session_state.round_start_time = None
+            st.session_state.shuffled_order = None
             st.rerun()
     
     st.markdown("---")
     
+    # Busca todas as respostas
     all_answers = models.get_all_answers_for_round(current_round['id'])
+    
+    # Embaralha apenas UMA VEZ (guarda no session_state)
+    if st.session_state.shuffled_order is None:
+        shuffled = all_answers.copy()
+        random.shuffle(shuffled)
+        st.session_state.shuffled_order = [ans['id'] for ans in shuffled]
+    
+    # Reordena baseado na ordem salva
+    answer_dict = {ans['id']: ans for ans in all_answers}
+    all_answers = [answer_dict[ans_id] for ans_id in st.session_state.shuffled_order if ans_id in answer_dict]
     
     revealed_count = sum(1 for ans in all_answers if ans['revealed'])
     total_count = len(all_answers)
     
+    # Botão do host para revelar
     if st.session_state.is_host and revealed_count < total_count:
         if st.button("👁️ Revelar Próximo", type="primary", use_container_width=True):
             models.reveal_next_answer(current_round['id'])
@@ -279,23 +305,28 @@ def show_revealing_phase(current_round):
     
     st.markdown("---")
     
+    # Exibição
     for ans in all_answers:
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2, col3 = st.columns([1, 3, 1])
+        
         with col1:
-            st.write(f"**#{ans['secret_number']}**")
-        with col2:
             if ans['revealed']:
-                st.write(f"**{ans['player_name']}:** {ans['answer']}")
+                st.write(f"**Número: {ans['secret_number']}**")
             else:
-                st.write(f"**{ans['player_name']}:** ████████")
+                st.write("**Número: ❓**")
+        
+        with col2:
+            st.write(f"**{ans['player_name']}:** {ans['answer']}")
+        
         with col3:
             if ans['revealed']:
-                st.write("✅ Revelado")
+                st.write("✅")
             else:
-                st.write("🔒 Oculto")
+                st.write("🔒")
     
-    if revealed_count == total_count:
-        st.success("🎉 Todas as respostas foram reveladas!")
+    # Quando tudo revelado
+    if revealed_count == total_count and total_count > 0:
+        st.success("🎉 Todos os números foram revelados!")
         
         if st.session_state.is_host:
             st.markdown("---")
@@ -305,16 +336,20 @@ def show_revealing_phase(current_round):
                     models.end_round(current_round['id'])
                     models.reset_room_for_new_round(st.session_state.room_id)
                     st.session_state.round_start_time = None
+                    st.session_state.shuffled_order = None
                     st.rerun()
             with col2:
                 if st.button("🏁 Encerrar Partida", use_container_width=True):
                     models.end_round(current_round['id'])
                     models.reset_room_for_new_round(st.session_state.room_id)
+                    st.session_state.shuffled_order = None
                     go_to_home()
-    
-    time.sleep(2)
-    st.rerun()
+    else:
+        # Auto-refresh apenas se ainda houver números a revelar
+        time.sleep(2)
+        st.rerun()
 
+# Roteamento de páginas
 if st.session_state.page == 'home':
     show_home_page()
 elif st.session_state.page == 'room':
